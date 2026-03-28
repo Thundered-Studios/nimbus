@@ -36,7 +36,7 @@ from nimbus import Nimbus, NimbusConfig
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--variant",     type=str,   default="1.5b")
+    p.add_argument("--variant",     type=str,   default="4b")
     p.add_argument("--port",        type=int,   default=8000)
     p.add_argument("--host",        type=str,   default="0.0.0.0")
     p.add_argument("--4bit",        dest="load_4bit", action="store_true")

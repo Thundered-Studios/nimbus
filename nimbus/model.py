@@ -25,17 +25,16 @@ from threading import Thread
 from .config import NimbusConfig
 
 
-# HuggingFace repo for the pretrained backbone
-_BACKBONE = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
-
 # Variant map — choose by size
 VARIANTS = {
-    "1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-    "7b":   "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-    "8b":   "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
-    "14b":  "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    "32b":  "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-    "70b":  "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+    "0.6b": "Qwen/Qwen3-0.6B",
+    "1.7b": "Qwen/Qwen3-1.7B",
+    "4b":   "Qwen/Qwen3-4B",
+    "8b":   "Qwen/Qwen3-8B",
+    "14b":  "Qwen/Qwen3-14B",
+    "32b":  "Qwen/Qwen3-32B",
+    "30b":  "Qwen/Qwen3-30B-A3B",
+    "235b": "Qwen/Qwen3-235B-A22B",
 }
 
 

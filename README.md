@@ -1,10 +1,10 @@
 # Nimbus-1
 
-> A small language model trained from scratch. Open research by [Thundered Studios](https://thundered-studios.github.io).
+> A small language model trained from scratch. Open research by [Thundered Studios](https://thunderedstudios.com).
 
 Nimbus-1 is a decoder-only transformer language model (~124M parameters) trained completely from scratch on ~10B tokens of text. Built and researched by Arjun Katta (age 12) at Thundered Studios.
 
-**Blog post:** [thundered-studios.github.io/blog/nimbus-1](https://thundered-studios.github.io/blog/nimbus-1)
+**Blog post:** [thunderedstudios.com/blog/nimbus-1](https://thunderedstudios.com/blog/nimbus-1)
 
 ---
 
@@ -47,7 +47,7 @@ nimbus/
 └── configs/        # Training configs
 ```
 
-> Code and weights coming as training progresses. Follow the [blog](https://thundered-studios.github.io/blog/nimbus-1) for updates.
+> Code and weights coming as training progresses. Follow the [blog](https://thunderedstudios.com/blog/nimbus-1) for updates.
 
 ---
 
@@ -63,4 +63,4 @@ MIT — use it, fork it, learn from it.
 
 ---
 
-*Thundered Studios · [thundered-studios.github.io](https://thundered-studios.github.io)*
+*Thundered Studios · [thundered-studios.github.io](https://thunderedstudios.com)*

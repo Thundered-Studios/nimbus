@@ -1,0 +1,42 @@
+# Nimbus-1 Training Config
+# ~124M parameters, trained on ~10B tokens of FineWeb
+
+# Model
+n_layer: 12
+n_head: 12
+n_embd: 768
+block_size: 1024
+vocab_size: 50257
+dropout: 0.0
+bias: true
+
+# Data
+data_dir: data
+out_dir: out
+
+# Training
+max_iters: 19073         # ~10B tokens at 524k tokens/iter
+batch_size: 8            # sequences per GPU step
+grad_accum_steps: 64     # effective batch = 8 * 64 * 1024 = 524,288 tokens
+eval_interval: 500
+eval_iters: 100
+log_interval: 10
+save_interval: 1000
+
+# Optimizer
+learning_rate: 0.0006
+weight_decay: 0.1
+beta1: 0.9
+beta2: 0.95
+grad_clip: 1.0
+
+# LR schedule
+warmup_iters: 715        # ~375M token warmup
+lr_decay_iters: 19073
+min_lr: 0.00006          # 1/10 of peak lr
+
+# System
+device: cuda
+dtype: bfloat16
+compile: true
+seed: 1337

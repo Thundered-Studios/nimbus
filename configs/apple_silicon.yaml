@@ -1,0 +1,27 @@
+# Nimbus-1 — Apple Silicon (MPS) config
+# Runs on M1/M2/M3 Macs. torch.compile disabled (unstable on MPS).
+
+n_layer: 12
+n_head: 12
+n_embd: 768
+block_size: 1024
+gradient_checkpointing: false
+use_flash_attn: false
+norm_type: layernorm
+
+batch_size: 4
+grad_accum_steps: 32
+max_iters: 19073
+eval_interval: 500
+eval_iters: 50
+log_interval: 10
+
+learning_rate: 0.0006
+warmup_iters: 715
+lr_decay_iters: 19073
+min_lr: 0.00006
+
+device: mps
+dtype: float32
+compile: false
+num_workers: 4

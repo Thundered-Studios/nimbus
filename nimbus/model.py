@@ -1,93 +1,78 @@
 """
-Nimbus — core model class.
+Nimbus — model loader.
 
-Wraps a pretrained transformer backbone with Nimbus identity,
-chat formatting, streaming generation, and hardware-aware loading.
+Uses Nimbus's own architecture (sourced from Qwen3, renamed throughout).
+Loads pretrained weights directly into NimbusForCausalLM.
 """
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import Iterator, Optional
-
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    TextIteratorStreamer,
-    BitsAndBytesConfig,
-    StoppingCriteria,
-    StoppingCriteriaList,
-)
 from threading import Thread
 
-from .config import NimbusConfig
+import torch
+from transformers import AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer
+
+from .modeling import NimbusForCausalLM
+from .configuration import NimbusConfig as _NimbusConfig
 
 
-# Variant map — choose by size
 VARIANTS = {
-    "0.6b": "Qwen/Qwen3-0.6B",
-    "1.7b": "Qwen/Qwen3-1.7B",
-    "4b":   "Qwen/Qwen3-4B",
-    "8b":   "Qwen/Qwen3-8B",
-    "14b":  "Qwen/Qwen3-14B",
-    "32b":  "Qwen/Qwen3-32B",
-    "30b":  "Qwen/Qwen3-30B-A3B",
-    "235b": "Qwen/Qwen3-235B-A22B",
+    "0.6b": ("Qwen/Qwen3-0.6B",   _NimbusConfig),
+    "1.7b": ("Qwen/Qwen3-1.7B",   _NimbusConfig),
+    "4b":   ("Qwen/Qwen3-4B",     _NimbusConfig),
+    "8b":   ("Qwen/Qwen3-8B",     _NimbusConfig),
+    "14b":  ("Qwen/Qwen3-14B",    _NimbusConfig),
+    "32b":  ("Qwen/Qwen3-32B",    _NimbusConfig),
 }
 
 
-class StopOnTokens(StoppingCriteria):
-    def __init__(self, stop_ids: list[int]):
-        self.stop_ids = stop_ids
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
-        for stop_id in self.stop_ids:
-            if input_ids[0][-1] == stop_id:
-                return True
-        return False
+class NimbusConfig:
+    def __init__(
+        self,
+        max_new_tokens: int = 512,
+        temperature: float = 0.6,
+        top_p: float = 0.95,
+        top_k: int = 50,
+        repetition_penalty: float = 1.1,
+        torch_dtype: str = "auto",
+        device_map: str = "auto",
+        load_in_4bit: bool = False,
+        load_in_8bit: bool = False,
+        system_prompt: str = "You are Nimbus, a helpful and intelligent AI assistant created by Thundered Studios.",
+    ):
+        self.max_new_tokens     = max_new_tokens
+        self.temperature        = temperature
+        self.top_p              = top_p
+        self.top_k              = top_k
+        self.repetition_penalty = repetition_penalty
+        self.torch_dtype        = torch_dtype
+        self.device_map         = device_map
+        self.load_in_4bit       = load_in_4bit
+        self.load_in_8bit       = load_in_8bit
+        self.system_prompt      = system_prompt
 
 
 class Nimbus:
-    """
-    Nimbus language model.
-
-    Usage:
-        nimbus = Nimbus.load()
-        print(nimbus.chat("What is a transformer?"))
-    """
-
     def __init__(self, model, tokenizer, config: NimbusConfig):
-        self._model = model
+        self._model     = model
         self._tokenizer = tokenizer
-        self.config = config
-
-    # ------------------------------------------------------------------
-    # Loading
-    # ------------------------------------------------------------------
+        self.config     = config
 
     @classmethod
     def load(
         cls,
-        variant: str = "1.5b",
+        variant: str = "4b",
         config: Optional[NimbusConfig] = None,
         local_path: Optional[str] = None,
     ) -> "Nimbus":
-        """
-        Load Nimbus. Downloads weights automatically on first run.
+        cfg  = config or NimbusConfig()
+        repo, _ = VARIANTS.get(variant, VARIANTS["4b"])
+        src  = local_path or repo
 
-        Args:
-            variant: Model size — "1.5b", "7b", "8b", "14b", "32b", "70b"
-            config:  NimbusConfig (uses defaults if None)
-            local_path: Load from a local directory instead of HuggingFace
-        """
-        cfg = config or NimbusConfig()
-        repo = local_path or VARIANTS.get(variant, VARIANTS["1.5b"])
+        print(f"Loading Nimbus {variant.upper()}...")
 
-        print(f"Loading Nimbus ({variant.upper()})...")
-
-        # Quantization
+        # Quantization config
         quant_cfg = None
         if cfg.load_in_4bit:
             quant_cfg = BitsAndBytesConfig(
@@ -99,31 +84,28 @@ class Nimbus:
         elif cfg.load_in_8bit:
             quant_cfg = BitsAndBytesConfig(load_in_8bit=True)
 
-        # dtype
-        if cfg.torch_dtype == "auto":
-            dtype = "auto"
-        else:
-            dtype = getattr(torch, cfg.torch_dtype, torch.bfloat16)
+        dtype = "auto" if cfg.torch_dtype == "auto" else getattr(torch, cfg.torch_dtype, torch.bfloat16)
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            repo,
-            trust_remote_code=True,
-        )
+        tokenizer = AutoTokenizer.from_pretrained(src, trust_remote_code=False)
 
-        model = AutoModelForCausalLM.from_pretrained(
-            repo,
+        # Load the pretrained weights into NimbusForCausalLM directly
+        model = NimbusForCausalLM.from_pretrained(
+            src,
             torch_dtype=dtype,
             device_map=cfg.device_map,
             quantization_config=quant_cfg,
-            trust_remote_code=True,
+            # Map Qwen3 config keys → NimbusConfig
+            config=_NimbusConfig.from_pretrained(src),
         )
         model.eval()
 
-        print(f"Nimbus ready. ({_count_params(model):.1f}B parameters)")
+        n_params = sum(p.numel() for p in model.parameters()) / 1e9
+        print(f"Nimbus ready — {n_params:.1f}B parameters")
+
         return cls(model, tokenizer, cfg)
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Prompt formatting
     # ------------------------------------------------------------------
 
     def _build_messages(self, prompt: str, history: list[dict] | None = None) -> list[dict]:
@@ -135,20 +117,9 @@ class Nimbus:
 
     def _tokenize(self, messages: list[dict]) -> torch.Tensor:
         text = self._tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
+            messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self._tokenizer(text, return_tensors="pt")
-        return inputs.input_ids.to(self._model.device)
-
-    def _stop_criteria(self) -> StoppingCriteriaList:
-        stop_tokens = []
-        for tok in ["<|end▁of▁sentence|>", "<|im_end|>", "</s>", "<|eot_id|>"]:
-            ids = self._tokenizer.encode(tok, add_special_tokens=False)
-            if ids:
-                stop_tokens.extend(ids)
-        return StoppingCriteriaList([StopOnTokens(stop_tokens)])
+        return self._tokenizer(text, return_tensors="pt").input_ids.to(self._model.device)
 
     # ------------------------------------------------------------------
     # Inference
@@ -159,27 +130,21 @@ class Nimbus:
         self,
         prompt: str,
         history: list[dict] | None = None,
-        max_new_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-        top_k: Optional[int] = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> str:
-        """Single-turn or multi-turn chat. Returns the full response string."""
-        messages = self._build_messages(prompt, history)
-        input_ids = self._tokenize(messages)
-
+        input_ids = self._tokenize(self._build_messages(prompt, history))
         output = self._model.generate(
             input_ids,
-            max_new_tokens=max_new_tokens or self.config.max_new_tokens,
-            temperature=temperature or self.config.temperature,
-            top_p=top_p or self.config.top_p,
-            top_k=top_k or self.config.top_k,
-            repetition_penalty=self.config.repetition_penalty,
-            do_sample=True,
-            stopping_criteria=self._stop_criteria(),
-            pad_token_id=self._tokenizer.eos_token_id,
+            max_new_tokens    = max_new_tokens or self.config.max_new_tokens,
+            temperature       = temperature    or self.config.temperature,
+            top_p             = top_p          or self.config.top_p,
+            top_k             = self.config.top_k,
+            repetition_penalty= self.config.repetition_penalty,
+            do_sample         = True,
+            pad_token_id      = self._tokenizer.eos_token_id,
         )
-
         new_tokens = output[0][input_ids.shape[-1]:]
         return self._tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
@@ -187,68 +152,42 @@ class Nimbus:
         self,
         prompt: str,
         history: list[dict] | None = None,
-        max_new_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> Iterator[str]:
-        """Streaming chat — yields text chunks as they are generated."""
-        messages = self._build_messages(prompt, history)
-        input_ids = self._tokenize(messages)
-
-        streamer = TextIteratorStreamer(
-            self._tokenizer,
-            skip_prompt=True,
-            skip_special_tokens=True,
-        )
+        input_ids = self._tokenize(self._build_messages(prompt, history))
+        streamer  = TextIteratorStreamer(self._tokenizer, skip_prompt=True, skip_special_tokens=True)
 
         gen_kwargs = dict(
-            input_ids=input_ids,
-            max_new_tokens=max_new_tokens or self.config.max_new_tokens,
-            temperature=temperature or self.config.temperature,
-            top_p=top_p or self.config.top_p,
-            repetition_penalty=self.config.repetition_penalty,
-            do_sample=True,
-            streamer=streamer,
-            pad_token_id=self._tokenizer.eos_token_id,
-            stopping_criteria=self._stop_criteria(),
+            input_ids         = input_ids,
+            max_new_tokens    = max_new_tokens or self.config.max_new_tokens,
+            temperature       = temperature    or self.config.temperature,
+            top_p             = top_p          or self.config.top_p,
+            top_k             = self.config.top_k,
+            repetition_penalty= self.config.repetition_penalty,
+            do_sample         = True,
+            streamer          = streamer,
+            pad_token_id      = self._tokenizer.eos_token_id,
         )
-
-        thread = Thread(target=self._model.generate, kwargs=gen_kwargs)
-        thread.start()
-
-        for chunk in streamer:
-            yield chunk
-
-        thread.join()
+        Thread(target=self._model.generate, kwargs=gen_kwargs, daemon=True).start()
+        yield from streamer
 
     # ------------------------------------------------------------------
-    # Fine-tuning helpers
+    # Fine-tuning
     # ------------------------------------------------------------------
 
     def enable_training(self, gradient_checkpointing: bool = True):
-        """Switch the model to training mode with optional gradient checkpointing."""
         self._model.train()
         if gradient_checkpointing:
             self._model.gradient_checkpointing_enable()
         return self._model
 
     def save(self, path: str):
-        """Save fine-tuned weights and tokenizer."""
         self._model.save_pretrained(path)
         self._tokenizer.save_pretrained(path)
         print(f"Saved to {path}")
 
-    # ------------------------------------------------------------------
-    # Repr
-    # ------------------------------------------------------------------
-
-    def __repr__(self) -> str:
-        return (
-            f"Nimbus(params={_count_params(self._model):.1f}B, "
-            f"device={self._model.device}, "
-            f"dtype={next(self._model.parameters()).dtype})"
-        )
-
-
-def _count_params(model) -> float:
-    return sum(p.numel() for p in model.parameters()) / 1e9
+    def __repr__(self):
+        n = sum(p.numel() for p in self._model.parameters()) / 1e9
+        return f"Nimbus({n:.1f}B params | {next(self._model.parameters()).dtype} | {self._model.device})"

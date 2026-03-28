@@ -11,7 +11,7 @@ from typing import Iterator, Optional
 from threading import Thread
 
 import torch
-from transformers import AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TextIteratorStreamer
 
 from .modeling import NimbusForCausalLM
 from .configuration import NimbusConfig as _NimbusConfig
@@ -86,17 +86,32 @@ class Nimbus:
 
         dtype = "auto" if cfg.torch_dtype == "auto" else getattr(torch, cfg.torch_dtype, torch.bfloat16)
 
-        tokenizer = AutoTokenizer.from_pretrained(src, trust_remote_code=False)
+        tokenizer = AutoTokenizer.from_pretrained(src)
 
-        # Load the pretrained weights into NimbusForCausalLM directly
-        model = NimbusForCausalLM.from_pretrained(
+        # Load weights from cache using AutoModel (uses existing cache),
+        # then move them into our NimbusForCausalLM architecture
+        base = AutoModelForCausalLM.from_pretrained(
             src,
             torch_dtype=dtype,
             device_map=cfg.device_map,
             quantization_config=quant_cfg,
-            # Map Qwen3 config keys → NimbusConfig
-            config=_NimbusConfig.from_pretrained(src),
         )
+
+        # Build NimbusForCausalLM from the Qwen3 config fields
+        nimbus_cfg = _NimbusConfig(**{
+            k: v for k, v in base.config.to_dict().items()
+            if hasattr(_NimbusConfig(), k) or k in _NimbusConfig.__dataclass_fields__
+            if False  # fallback: just pass all
+        })
+        # Simpler: copy config fields directly
+        nimbus_cfg = _NimbusConfig(**{
+            k: v for k, v in base.config.to_dict().items()
+            if not k.startswith("_") and k != "model_type"
+        })
+        model = NimbusForCausalLM(nimbus_cfg)
+        model.load_state_dict(base.state_dict(), strict=False)
+        model = model.to(next(base.parameters()).device)
+        del base
         model.eval()
 
         n_params = sum(p.numel() for p in model.parameters()) / 1e9

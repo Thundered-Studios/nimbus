@@ -1,17 +1,18 @@
 # Core
 torch>=2.1.0
-numpy>=1.24.0
-tiktoken>=0.5.1
+transformers>=4.45.0
+accelerate>=0.26.0
+tokenizers>=0.19.0
+
+# Quantization (optional, for running on low VRAM)
+bitsandbytes>=0.41.0
+
+# Fine-tuning (optional)
+peft>=0.7.0
+trl>=0.7.0
 datasets>=2.14.0
-pyyaml>=6.0
-tqdm>=4.66.0
 
-# Optional: Flash Attention 2 (CUDA only, big speedup on A100/H100)
-# pip install flash-attn --no-build-isolation
-# flash-attn>=2.3.0
-
-# Optional: Apex fused LayerNorm (CUDA only)
-# pip install -v --disable-pip-version-check --no-cache-dir \
-#   --no-build-isolation --config-settings "--build-option=--cpp_ext" \
-#   --config-settings "--build-option=--cuda_ext" \
-#   git+https://github.com/NVIDIA/apex.git
+# API server (optional)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
